@@ -1,0 +1,153 @@
+{
+  "name": "***** V1 : WhatsApp Property Lead Qualification - Interactive",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "id": "9ed1c6a9-f5c1-4cad-95ef-f50213dfbfcc",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7f982c6c-eeea-44cf-a635-6ba85b996e37",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "wUMKgesoU2aWRo7x",
+          "name": "WhatsApp OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.leads) staticData.leads = {};\n\nconst root = $json;\nconst value = root?.entry?.[0]?.changes?.[0]?.value ?? root?.body?.entry?.[0]?.changes?.[0]?.value ?? root;\nconst msg = value?.messages?.[0];\n\nif (!msg) {\n  return [{ json: { ignore: true, reason: 'No WhatsApp message found' } }];\n}\n\nconst phone = msg.from;\nconst phoneNumberId =\n  value?.metadata?.phone_number_id ??\n  value?.metadata?.phone_number_id ??\n  'YOUR_PHONE_NUMBER_ID';\n\nconst contactName =\n  value?.contacts?.[0]?.profile?.name ??\n  'there';\n\nconst text = msg?.text?.body ?? '';\nconst buttonId = msg?.interactive?.button_reply?.id ?? '';\nconst listId = msg?.interactive?.list_reply?.id ?? '';\nconst replyId = buttonId || listId || '';\n\nlet lead = staticData.leads[phone];\n\nif (!lead) {\n  lead = {\n    phone,\n    name: contactName,\n    step: 'welcome',\n    intent: '',\n    propertyType: '',\n    bedrooms: '',\n    budget: '',\n    area: '',\n    timeline: ''\n  };\n}\n\nlead.name = contactName || lead.name;\nlead.phone = phone;\n\nconst selection = replyId || text.trim();\nconst normalized = selection.toLowerCase();\nconst isNewLead = !staticData.leads[phone];\n\nfunction setStep(next) {\n  lead.step = next;\n}\n\nfunction buttonPayload(bodyText, buttons) {\n  return {\n    messaging_product: 'whatsapp',\n    recipient_type: 'individual',\n    to: phone,\n    type: 'interactive',\n    interactive: {\n      type: 'button',\n      body: { text: bodyText },\n      action: {\n        buttons: buttons.map(b => ({\n          type: 'reply',\n          reply: { id: b.id, title: b.title }\n        }))\n      }\n    }\n  };\n}\n\nfunction listPayload(bodyText, buttonText, sections) {\n  return {\n    messaging_product: 'whatsapp',\n    recipient_type: 'individual',\n    to: phone,\n    type: 'interactive',\n    interactive: {\n      type: 'list',\n      body: { text: bodyText },\n      action: {\n        button: buttonText,\n        sections\n      }\n    }\n  };\n}\n\nconst welcomeButtons = [\n  { id: 'rent_property', title: 'Rent a Property' },\n  { id: 'sell_property', title: 'Sell / Rent Property' },\n  { id: 'see_all_options', title: 'See all options' }\n];\n\nlet apiBody;\nlet nextStep = lead.step;\nlet status = 'active';\n\nif (lead.step === 'welcome') {\n  if (!selection) {\n    apiBody = buttonPayload(\n      `Welcome to fam Properties 👋\\nHow can we help you today?`,\n      welcomeButtons\n    );\n  } else if (normalized === 'rent_property') {\n    lead.intent = 'rent';\n    nextStep = 'rent_property_type';\n    apiBody = buttonPayload(\n      'What type of property are you looking to rent?',\n      [\n        { id: 'rent_apartment', title: 'Apartment' },\n        { id: 'rent_villa', title: 'Villa' },\n        { id: 'rent_all', title: 'See all options' }\n      ]\n    );\n  } else if (normalized === 'sell_property') {\n    lead.intent = 'sell_or_rent_out';\n    nextStep = 'seller_name';\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: { body: 'Before we continue, what’s your name?' }\n    };\n  } else if (normalized === 'see_all_options') {\n    nextStep = 'all_options';\n    apiBody = listPayload(\n      'Please choose an option:',\n      'Choose',\n      [{\n        title: 'Services',\n        rows: [\n          { id: 'rent_property', title: 'Rent a Property' },\n          { id: 'buy_property', title: 'Buy a Property' },\n          { id: 'sell_property', title: 'Sell / Rent My Property' },\n          { id: 'property_management', title: 'Property Management' }\n        ]\n      }]\n    );\n  } else if (normalized === 'buy_property') {\n    lead.intent = 'buy';\n    nextStep = 'buyer_name';\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: { body: 'Before we continue, what’s your name?' }\n    };\n  } else {\n    apiBody = buttonPayload(\n      'Welcome to fam Properties 👋\\nHow can we help you today?',\n      welcomeButtons\n    );\n  }\n}\n\nelse if (lead.step === 'all_options') {\n  if (normalized === 'rent_property') {\n    lead.intent = 'rent';\n    nextStep = 'rent_property_type';\n    apiBody = buttonPayload(\n      'What type of property are you looking to rent?',\n      [\n        { id: 'rent_apartment', title: 'Apartment' },\n        { id: 'rent_villa', title: 'Villa' },\n        { id: 'rent_all', title: 'See all options' }\n      ]\n    );\n  } else if (normalized === 'buy_property') {\n    lead.intent = 'buy';\n    nextStep = 'buyer_name';\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: { body: 'Before we continue, what’s your name?' }\n    };\n  } else if (normalized === 'sell_property') {\n    lead.intent = 'sell_or_rent_out';\n    nextStep = 'seller_name';\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: { body: 'Before we continue, what’s your name?' }\n    };\n  } else {\n    apiBody = listPayload('Please choose an option:', 'Choose', [{\n      title: 'Services',\n      rows: [\n        { id: 'rent_property', title: 'Rent a Property' },\n        { id: 'buy_property', title: 'Buy a Property' },\n        { id: 'sell_property', title: 'Sell / Rent My Property' }\n      ]\n    }]);\n  }\n}\n\nelse if (lead.step === 'buyer_name') {\n  lead.name = text.trim() || contactName;\n  nextStep = 'buyer_type';\n  apiBody = buttonPayload(\n    'Are you buying for:',\n    [\n      { id: 'purpose_investment', title: 'Investment' },\n      { id: 'purpose_living', title: 'Living' },\n      { id: 'purpose_both', title: 'Both' }\n    ]\n  );\n}\n\nelse if (lead.step === 'buyer_type') {\n  lead.intentPurpose = selection;\n  nextStep = 'buy_property_type';\n  apiBody = buttonPayload(\n    'What type of property?',\n    [\n      { id: 'buy_apartment', title: 'Apartment' },\n      { id: 'buy_villa', title: 'Villa' },\n      { id: 'buy_all', title: 'See all options' }\n    ]\n  );\n}\n\nelse if (lead.step === 'buy_property_type') {\n  const map = {\n    buy_apartment: 'Apartment',\n    buy_villa: 'Villa'\n  };\n  if (map[selection]) {\n    lead.propertyType = map[selection];\n    nextStep = 'bedrooms';\n    apiBody = buttonPayload(\n      'How many bedrooms?',\n      [\n        { id: 'bed_studio', title: 'Studio' },\n        { id: 'bed_1', title: '1 Bedroom' },\n        { id: 'bed_all', title: 'See all options' }\n      ]\n    );\n  } else if (normalized === 'buy_all') {\n    nextStep = 'buy_property_type_list';\n    apiBody = listPayload('What type of property?', 'Choose', [{\n      title: 'Property types',\n      rows: [\n        { id: 'buy_apartment', title: 'Apartment' },\n        { id: 'buy_villa', title: 'Villa' },\n        { id: 'buy_townhouse', title: 'Townhouse' },\n        { id: 'buy_penthouse', title: 'Penthouse' },\n        { id: 'buy_office', title: 'Office' },\n        { id: 'buy_retail', title: 'Retail' },\n        { id: 'buy_other', title: 'Other' }\n      ]\n    }]);\n  } else {\n    apiBody = buttonPayload('Please pick a valid option.', [\n      { id: 'buy_apartment', title: 'Apartment' },\n      { id: 'buy_villa', title: 'Villa' },\n      { id: 'buy_all', title: 'See all options' }\n    ]);\n  }\n}\n\nelse if (lead.step === 'buy_property_type_list') {\n  const map = {\n    buy_apartment: 'Apartment',\n    buy_villa: 'Villa',\n    buy_townhouse: 'Townhouse',\n    buy_penthouse: 'Penthouse',\n    buy_office: 'Office',\n    buy_retail: 'Retail',\n    buy_other: 'Other'\n  };\n  if (map[selection]) {\n    lead.propertyType = map[selection];\n    nextStep = 'bedrooms';\n    apiBody = buttonPayload(\n      'How many bedrooms?',\n      [\n        { id: 'bed_studio', title: 'Studio' },\n        { id: 'bed_1', title: '1 Bedroom' },\n        { id: 'bed_all', title: 'See all options' }\n      ]\n    );\n  }\n}\n\nelse if (lead.step === 'rent_property_type') {\n  const map = {\n    rent_apartment: 'Apartment',\n    rent_villa: 'Villa'\n  };\n  if (map[selection]) {\n    lead.propertyType = map[selection];\n    nextStep = 'rent_bedrooms';\n    apiBody = buttonPayload(\n      'How many bedrooms?',\n      [\n        { id: 'rent_studio', title: 'Studio' },\n        { id: 'rent_1', title: '1 Bedroom' },\n        { id: 'rent_all', title: 'See all options' }\n      ]\n    );\n  } else if (normalized === 'rent_all') {\n    nextStep = 'rent_property_type_list';\n    apiBody = listPayload('What type of property are you looking to rent?', 'Choose', [{\n      title: 'Property types',\n      rows: [\n        { id: 'rent_apartment', title: 'Apartment' },\n        { id: 'rent_villa', title: 'Villa' },\n        { id: 'rent_townhouse', title: 'Townhouse' },\n        { id: 'rent_penthouse', title: 'Penthouse' },\n        { id: 'rent_office', title: 'Office' },\n        { id: 'rent_retail', title: 'Retail' },\n        { id: 'rent_other', title: 'Other' }\n      ]\n    }]);\n  } else {\n    apiBody = buttonPayload('Please pick a valid option.', [\n      { id: 'rent_apartment', title: 'Apartment' },\n      { id: 'rent_villa', title: 'Villa' },\n      { id: 'rent_all', title: 'See all options' }\n    ]);\n  }\n}\n\nelse if (lead.step === 'rent_property_type_list') {\n  const map = {\n    rent_apartment: 'Apartment',\n    rent_villa: 'Villa',\n    rent_townhouse: 'Townhouse',\n    rent_penthouse: 'Penthouse',\n    rent_office: 'Office',\n    rent_retail: 'Retail',\n    rent_other: 'Other'\n  };\n  if (map[selection]) {\n    lead.propertyType = map[selection];\n    nextStep = 'rent_bedrooms';\n    apiBody = buttonPayload('How many bedrooms?', [\n      { id: 'rent_studio', title: 'Studio' },\n      { id: 'rent_1', title: '1 Bedroom' },\n      { id: 'rent_all', title: 'See all options' }\n    ]);\n  }\n}\n\nelse if (lead.step === 'bedrooms' || lead.step === 'rent_bedrooms') {\n  const bedroomMap = {\n    bed_studio: 'Studio',\n    bed_1: '1 Bedroom',\n    bed_2: '2 Bedrooms',\n    bed_3: '3 Bedrooms',\n    rent_studio: 'Studio',\n    rent_1: '1 Bedroom',\n    rent_2: '2 Bedrooms',\n    rent_3: '3 Bedrooms'\n  };\n  if (bedroomMap[selection]) {\n    lead.bedrooms = bedroomMap[selection];\n    nextStep = 'budget';\n    apiBody = buttonPayload(\n      lead.intent === 'rent' ? 'What is your monthly rental budget?' : 'What is your purchase budget?',\n      [\n        { id: 'budget_1', title: 'Below AED 1M' },\n        { id: 'budget_2', title: 'AED 1M–2M' },\n        { id: 'budget_all', title: 'See all options' }\n      ]\n    );\n  } else if (selection === 'bed_all' || selection === 'rent_all') {\n    nextStep = lead.step;\n    apiBody = listPayload('How many bedrooms?', 'Choose', [{\n      title: 'Bedrooms',\n      rows: [\n        { id: lead.intent === 'rent' ? 'rent_studio' : 'bed_studio', title: 'Studio' },\n        { id: lead.intent === 'rent' ? 'rent_1' : 'bed_1', title: '1 Bedroom' },\n        { id: lead.intent === 'rent' ? 'rent_2' : 'bed_2', title: '2 Bedrooms' },\n        { id: lead.intent === 'rent' ? 'rent_3' : 'bed_3', title: '3 Bedrooms' }\n      ]\n    }]);\n  } else {\n    apiBody = buttonPayload('Please pick a valid option.', [\n      { id: lead.intent === 'rent' ? 'rent_studio' : 'bed_studio', title: 'Studio' },\n      { id: lead.intent === 'rent' ? 'rent_1' : 'bed_1', title: '1 Bedroom' },\n      { id: 'bed_all', title: 'See all options' }\n    ]);\n  }\n}\n\nelse if (lead.step === 'budget') {\n  const budgetMap = {\n    budget_1: 'Below AED 1M',\n    budget_2: 'AED 1M–2M',\n    budget_3: 'AED 2M–5M',\n    budget_4: 'Above AED 5M'\n  };\n  if (budgetMap[selection]) {\n    lead.budget = budgetMap[selection];\n    nextStep = 'area';\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: { body: 'Preferred area or community?\\n(Or simply type the area you want)' }\n    };\n  } else if (selection === 'budget_all') {\n    nextStep = 'budget';\n    apiBody = listPayload('What is your purchase budget?', 'Choose', [{\n      title: 'Budget',\n      rows: [\n        { id: 'budget_1', title: 'Below AED 1M' },\n        { id: 'budget_2', title: 'AED 1M–2M' },\n        { id: 'budget_3', title: 'AED 2M–5M' },\n        { id: 'budget_4', title: 'Above AED 5M' }\n      ]\n    }]);\n  } else {\n    apiBody = buttonPayload('Please pick a valid option.', [\n      { id: 'budget_1', title: 'Below AED 1M' },\n      { id: 'budget_2', title: 'AED 1M–2M' },\n      { id: 'budget_all', title: 'See all options' }\n    ]);\n  }\n}\n\nelse if (lead.step === 'area') {\n  lead.area = text.trim() || selection;\n  nextStep = 'timeline';\n  apiBody = buttonPayload(\n    'When are you planning to purchase?',\n    [\n      { id: 'timeline_now', title: 'Immediately' },\n      { id: 'timeline_1m', title: 'Within 1 month' },\n      { id: 'timeline_all', title: 'See all options' }\n    ]\n  );\n}\n\nelse if (lead.step === 'timeline') {\n  const timelineMap = {\n    timeline_now: 'Immediately',\n    timeline_1m: 'Within 1 month',\n    timeline_3m: 'Within 3 months',\n    timeline_exploring: 'Just exploring'\n  };\n  if (timelineMap[selection]) {\n    lead.timeline = timelineMap[selection];\n    nextStep = 'complete';\n    status = 'complete';\n\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: {\n        body:\n          `Thanks, ${lead.name || 'bro'}! We've received your requirements.\\n\\n` +\n          `A fam property consultant will contact you shortly with suitable options.`\n      }\n    };\n  } else if (selection === 'timeline_all') {\n    apiBody = listPayload('When are you planning to purchase?', 'Choose', [{\n      title: 'Timeline',\n      rows: [\n        { id: 'timeline_now', title: 'Immediately' },\n        { id: 'timeline_1m', title: 'Within 1 month' },\n        { id: 'timeline_3m', title: 'Within 3 months' },\n        { id: 'timeline_exploring', title: 'Just exploring' }\n      ]\n    }]);\n  } else {\n    apiBody = buttonPayload('Please pick a valid option.', [\n      { id: 'timeline_now', title: 'Immediately' },\n      { id: 'timeline_1m', title: 'Within 1 month' },\n      { id: 'timeline_all', title: 'See all options' }\n    ]);\n  }\n}\n\nelse if (lead.step === 'seller_name') {\n  lead.name = text.trim() || contactName;\n  nextStep = 'seller_type';\n  apiBody = buttonPayload(\n    'What would you like to do?',\n    [\n      { id: 'seller_sell', title: 'Sell My Property' },\n      { id: 'seller_rent_out', title: 'Rent Out My Property' },\n      { id: 'seller_all', title: 'See all options' }\n    ]\n  );\n}\n\nelse if (lead.step === 'seller_type') {\n  lead.sellerType = selection;\n  nextStep = 'seller_property_type';\n  apiBody = listPayload('What type of property do you have?', 'Choose', [{\n    title: 'Property types',\n    rows: [\n      { id: 'seller_apartment', title: 'Apartment' },\n      { id: 'seller_villa', title: 'Villa' },\n      { id: 'seller_townhouse', title: 'Townhouse' },\n      { id: 'seller_penthouse', title: 'Penthouse' },\n      { id: 'seller_other', title: 'Other' }\n    ]\n  }]);\n}\n\nelse if (lead.step === 'seller_property_type') {\n  const map = {\n    seller_apartment: 'Apartment',\n    seller_villa: 'Villa',\n    seller_townhouse: 'Townhouse',\n    seller_penthouse: 'Penthouse',\n    seller_other: 'Other'\n  };\n  if (map[selection]) {\n    lead.propertyType = map[selection];\n    nextStep = 'seller_area';\n    apiBody = {\n      messaging_product: 'whatsapp',\n      recipient_type: 'individual',\n      to: phone,\n      type: 'text',\n      text: { body: 'What area or community is the property in?' }\n    };\n  }\n}\n\nelse if (lead.step === 'seller_area') {\n  lead.area = text.trim() || selection;\n  nextStep = 'seller_done';\n  status = 'complete';\n  apiBody = {\n    messaging_product: 'whatsapp',\n    recipient_type: 'individual',\n    to: phone,\n    type: 'text',\n    text: {\n      body: `Thanks, ${lead.name || 'there'}! We've received your property details. A fam consultant will contact you shortly.`\n    }\n  };\n}\n\nelse {\n  // If a completed lead messages again, show the main menu.\n  nextStep = 'welcome';\n  apiBody = buttonPayload(\n    'Welcome back 👋\\nHow can we help you today?',\n    welcomeButtons\n  );\n}\n\nlead.step = nextStep;\nstaticData.leads[phone] = lead;\n\nreturn [{\n  json: {\n    ignore: false,\n    phone,\n    phone_number_id: phoneNumberId,\n    lead,\n    apiBody,\n    raw_selection: selection,\n    status\n  }\n}];\n"
+      },
+      "id": "41afc94c-122f-4ea3-9c18-19f5baff1653",
+      "name": "Route + Build WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.ignore}}",
+              "operation": "isFalse"
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "eeac864f-c694-43c1-a517-ebb27e5fea08",
+      "name": "Valid WhatsApp Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        512,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v23.0/{{$json.phone_number_id}}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{JSON.stringify($json.apiBody)}}",
+        "options": {}
+      },
+      "id": "9a724d46-2598-4ef0-9fbd-6953a324f08f",
+      "name": "Send Interactive WhatsApp Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        768,
+        0
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "hrSpxMw8J46pVZuM",
+          "name": "WhatsApp account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Route + Build WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route + Build WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "Valid WhatsApp Message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid WhatsApp Message?": {
+      "main": [
+        [
+          {
+            "node": "Send Interactive WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "3cf3d1c7-0fff-442c-9950-01457c6a49dc",
+  "meta": {
+    "instanceId": "6984cec24ef44f60fa4283fb306f67936521d1ce30aca9aa6d969b1a845def41"
+  },
+  "nodeGroups": [],
+  "id": "Of7lVkYa5ZOzZRdv",
+  "tags": []
+}
